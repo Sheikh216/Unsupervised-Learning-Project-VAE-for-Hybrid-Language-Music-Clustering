@@ -277,21 +277,214 @@ class AudioDataLoader:
         return (X_train, y_train), (X_test, y_test)
     
     def load_data(self, **kwargs):
-        """
-        Load the specified dataset.
-        
-        Returns:
-            (X_train, y_train), (X_test, y_test)
-        """
         if self.dataset_name == 'gtzan':
             return self.load_gtzan(kwargs.get('features_file'))
-        elif self.dataset_name == 'msd' or self.dataset_name == 'million_song':
+        elif self.dataset_name == 'msd':
             return self.load_million_song_subset(kwargs.get('csv_file'))
         elif self.dataset_name == 'jamendo':
             return self.load_jamendo(kwargs.get('csv_file'))
+        elif self.dataset_name == 'spotify':  # ADD THIS
+            return self.load_spotify(kwargs.get('csv_file'))
         else:
             print(f"Dataset {self.dataset_name} not recognized. Using sample data.")
             return self._generate_sample_music_data()
+
+    def load_bangla_english(self, csv_path):
+    
+        df = pd.read_csv(csv_path)
+        
+        # Extract features (TF-IDF on lyrics column)
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        vectorizer = TfidfVectorizer(max_features=500)
+        X = vectorizer.fit_transform(df['lyrics']).toarray()
+        
+        # Create language labels
+        y = np.array([0 if lang=='english' else 1 for lang in df['language']])
+        
+        # Split
+        from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        
+        # One-hot encode
+        from tensorflow import keras
+        y_train = keras.utils.to_categorical(y_train, 2)
+        y_test = keras.utils.to_categorical(y_test, 2)
+        
+        return (X_train, y_train), (X_test, y_test)
+    
+
+
+    def load_spotify(self, csv_file=None):
+
+
+        # Try to locate CSV
+        if csv_file and os.path.exists(csv_file):
+            df = pd.read_csv(csv_file)
+        else:
+            # Default location
+            default_path = os.path.join(self.data_dir, 'spotify', 'spotify_features.csv')
+            if os.path.exists(default_path):
+                df = pd.read_csv(default_path)
+            else:
+                msg = f"Spotify CSV not found at {default_path}"
+                if not self.allow_fallback:
+                    raise FileNotFoundError(msg)
+                print(msg)
+                print("Generating sample data...")
+                return self._generate_sample_music_data(n_samples=1000, n_features=9, n_classes=10)
+
+        print(f"Original dataset shape: {df.shape}")
+        print(f"Columns: {df.columns.tolist()}")
+
+        # 1. Keep only relevant audio features
+        audio_features = ['danceability', 'energy', 'loudness', 'speechiness',
+                        'acousticness', 'instrumentalness', 'liveness',
+                        'valence', 'tempo']
+        
+        # Keep only available features
+        available_features = [f for f in audio_features if f in df.columns]
+        print(f"Available audio features: {available_features}")
+
+        # 2. Filter by genre if 'genre' column exists
+        if 'genre' in df.columns:
+            print(f"Original genre count: {df['genre'].nunique()}")
+            
+            # Keep only tracks with genre labels (non-null)
+            df = df.dropna(subset=['genre'])
+            
+            # Keep only top N most frequent genres (e.g., top 10)
+            top_n = 10
+            top_genres = df['genre'].value_counts().head(top_n).index
+            df = df[df['genre'].isin(top_genres)]
+            
+            print(f"Keeping top {top_n} genres: {list(top_genres)}")
+            print(f"Rows after genre filtering: {len(df)}")
+        else:
+            print("No 'genre' column found. Will create synthetic genres.")
+
+        # 3. Sample to manageable size (max 1500 tracks)
+        max_samples = 1500
+        if len(df) > max_samples:
+            df = df.sample(n=max_samples, random_state=42)
+            print(f"Sampled to {max_samples} tracks")
+
+        # 4. Prepare features and labels
+        X = df[available_features].values
+        
+        if 'genre' in df.columns:
+            # Encode genres to integers
+            from sklearn.preprocessing import LabelEncoder
+            le = LabelEncoder()
+            y = le.fit_transform(df['genre'].values)
+            print(f"Unique genres after encoding: {len(np.unique(y))}")
+        else:
+            # Create synthetic genres using clustering
+            from sklearn.cluster import KMeans
+            kmeans = KMeans(n_clusters=10, random_state=42)
+            y = kmeans.fit_predict(X)
+            print("Created 10 synthetic genres using K-Means")
+
+        # 5. Split and normalize
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
+
+        # 6. One-hot encode labels
+        from tensorflow import keras
+        n_classes = len(np.unique(y))
+        y_train = keras.utils.to_categorical(y_train, n_classes)
+        y_test = keras.utils.to_categorical(y_test, n_classes)
+
+        print(f"\n✅ Spotify dataset loaded and filtered:")
+        print(f"   Training samples: {X_train.shape[0]}")
+        print(f"   Test samples: {X_test.shape[0]}")
+        print(f"   Features: {X_train.shape[1]}")
+        print(f"   Classes: {n_classes}")
+
+        return (X_train, y_train), (X_test, y_test)
+    
+
+    def load_jamendo(self, csv_file=None):
+        if csv_file is None:
+            csv_file = os.path.join(self.data_dir, 'jamendo', 'metadata.csv')
+        
+        if not os.path.exists(csv_file):
+            raise FileNotFoundError(f"Jamendo metadata not found at {csv_file}")
+        
+        df = pd.read_csv(csv_file)
+        
+        # DEBUG: Check the CSV content
+        print(f"Jamendo CSV columns: {df.columns.tolist()}")
+        if 'genre' in df.columns:
+            print(f"'genre' column unique values: {df['genre'].unique()}")
+            print(f"'genre' column distribution:\n{df['genre'].value_counts()}")
+        
+        # Extract audio features from audio files
+        audio_features = []
+        for idx, row in df.iterrows():
+            audio_path = os.path.join(self.data_dir, 'jamendo', 'audio', f"{row['track_id']}.mp3")
+            feats = self.extract_audio_features(audio_path) if os.path.exists(audio_path) else np.zeros(40)
+            audio_features.append(feats)
+        
+        X_audio = np.array(audio_features)
+        
+        # Use 'genre' or 'mood' as labels
+        if 'genre' in df.columns:
+            labels = df['genre'].values  # This is the 'labels' variable
+            print(f"Raw genre values: {labels[:20]}")  # First 20 genres
+            print(f"Number of unique genres: {len(np.unique(labels))}")
+            print(f"Genre distribution:\n{pd.Series(labels).value_counts()}")
+            
+            le = LabelEncoder()
+            y = le.fit_transform(labels)
+            
+            print(f"Encoded y values: {y[:20]}")
+            print(f"Unique encoded classes: {np.unique(y)}")
+            print(f"Number of classes: {len(np.unique(y))}")
+            
+        elif 'genre_top' in df.columns:
+            le = LabelEncoder()
+            y = le.fit_transform(df['genre_top'])
+        else:
+            y = np.zeros(len(X_audio))
+            print("WARNING: No genre column found. Using all zeros as labels.")
+        
+        # Split and return
+        X_train, X_test, y_train, y_test = train_test_split(
+            X_audio, y, test_size=0.2, random_state=42, stratify=y
+        )
+        
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
+        
+        from tensorflow import keras
+        n_classes = len(np.unique(y))
+        y_train = keras.utils.to_categorical(y_train, n_classes)
+        y_test = keras.utils.to_categorical(y_test, n_classes)
+        
+        print(f"\n✅ Jamendo dataset loaded:")
+        print(f"   Training samples: {X_train.shape[0]}")
+        print(f"   Test samples: {X_test.shape[0]}")
+        print(f"   Features: {X_train.shape[1]}")
+        print(f"   Classes: {n_classes}")
+        
+        return (X_train, y_train), (X_test, y_test)
+
+
+
+
+
+
+
+
+
+
+
 
 
 def download_dataset_instructions():

@@ -12,6 +12,10 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
+
+from src.dataset import load_bangla_lyrics_dataset
+
+
 from src.dataset import load_hybrid_dataset, build_audio_spectrogram_dataset
 from src.vae import VAE, CVAE, Autoencoder, ConvVAE
 from src.clustering import run_kmeans, run_agglomerative, run_dbscan, pca_kmeans, evaluate_clustering
@@ -105,9 +109,32 @@ def main():
     parser.add_argument("--spectrogram-ext", type=str, default=".wav,.mp3,.flac", help="Comma-separated audio extensions for spectrogram loading")
     parser.add_argument("--conv-latent-dim", type=int, default=16)
     parser.add_argument("--output", type=str, default=os.path.join(RESULTS_DIR, "clustering_metrics.csv"))
+    parser.add_argument(
+    "--bangla_csv",
+    type=str,
+    default=None,
+    help="Path to Bangla lyrics CSV"
+    )
+
     args = parser.parse_args()
 
     ensure_dirs()
+
+
+ 
+
+    # --------- INSERT HERE ---------
+    if args.bangla_csv is not None:
+        print("Running HARD task using Bangla lyrics dataset")
+
+        X, y_lang, label_encoder = load_bangla_lyrics_dataset(
+            args.bangla_csv,
+            max_features=args.tfidf_features
+        )
+
+        y_true = y_lang   # ground truth for evaluation
+    # --------------------------------
+
 
     # Load hybrid dataset (no synthetic fallback unless explicitly allowed)
     try:

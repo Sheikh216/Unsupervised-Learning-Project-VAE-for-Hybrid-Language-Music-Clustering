@@ -182,7 +182,7 @@ def main():
                        help='Learning rate for optimization')
     parser.add_argument('--batch-size', type=int, default=32,
                        help='Batch size for training')
-    parser.add_argument('--epochs', type=int, default=50,
+    parser.add_argument('--epochs', type=int, default=500,
                        help='Number of training epochs')
     parser.add_argument('--optimizer', type=str, default='momentum',
                        choices=['sgd', 'momentum'],
