@@ -26,11 +26,11 @@ def build_lyrics_features(texts: list[str], max_features: int = 500) -> Tuple[np
 
 
 def build_audio_mfcc_features(n_samples: int = 1000, data_dir: str = "./music_data", allow_fallback: bool = False) -> Tuple[np.ndarray, np.ndarray]:
-    #loader = AudioDataLoader('gtzan', data_dir=data_dir, allow_fallback=allow_fallback)
-    loader = AudioDataLoader('jamendo', data_dir=data_dir, allow_fallback=allow_fallback)
+    loader = AudioDataLoader('gtzan', data_dir=data_dir, allow_fallback=allow_fallback)
+    #loader = AudioDataLoader('jamendo', data_dir=data_dir, allow_fallback=allow_fallback)
     #loader = AudioDataLoader('spotify', data_dir=data_dir, allow_fallback=allow_fallback)
-    #(X_train, y_train), (X_test, y_test) = loader.load_gtzan()
-    (X_train, y_train), (X_test, y_test) = loader.load_jamendo()
+    (X_train, y_train), (X_test, y_test) = loader.load_gtzan()
+    #(X_train, y_train), (X_test, y_test) = loader.load_jamendo()
     X = np.vstack([X_train, X_test])
     y = np.vstack([y_train, y_test])
     return X, y
@@ -120,36 +120,37 @@ def load_hybrid_dataset(
 
 
 
-def load_bangla_lyrics_dataset(
-    csv_path,
-    max_features=3000
-):
-    import pandas as pd
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.preprocessing import LabelEncoder
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import LabelEncoder
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-    # Read CSV (force UTF-8)
-    df = pd.read_csv(csv_path, encoding="utf-8")
+def load_bangla_lyrics_dataset(csv_path, max_features=5000):
+    """
+    Load Bangla lyrics CSV and convert to features for clustering.
 
-    # Keep only required columns
-    df = df[["title", "category", "lyrics"]]
-    df = df.dropna()
+    Args:
+        csv_path: Path to CSV file with columns ['title','category','lyrics']
+        max_features: Max TF-IDF features for lyrics
 
-    # TF-IDF on Bangla lyrics
-    vectorizer = TfidfVectorizer(
-        max_features=max_features,
-        token_pattern=r"(?u)\b\w+\b"  # IMPORTANT for Bangla
-    )
-    X = vectorizer.fit_transform(df["lyrics"]).toarray()
+    Returns:
+        X: TF-IDF feature matrix (numpy array)
+        y: category labels as integers
+        label_encoder: fitted LabelEncoder (to decode labels if needed)
+    """
+    df = pd.read_csv(csv_path)
+    if not all(col in df.columns for col in ["title", "category", "lyrics"]):
+        raise ValueError("CSV must have columns: title, category, lyrics")
 
-    # Encode category labels
+    # Encode category labels as integers
     le = LabelEncoder()
-    y = le.fit_transform(df["category"])
+    y = le.fit_transform(df["category"].values)
 
-    print("Bangla dataset loaded:")
-    print("Samples:", X.shape[0])
-    print("TF-IDF dim:", X.shape[1])
-    print("Categories:", list(le.classes_))
+    # TF-IDF vectorization of lyrics
+    tfidf = TfidfVectorizer(max_features=max_features)
+    X = tfidf.fit_transform(df["lyrics"].astype(str)).toarray()
 
+    print(f"Loaded Bangla dataset: {X.shape[0]} samples, {X.shape[1]} features, {len(np.unique(y))} categories")
     return X, y, le
+
 
