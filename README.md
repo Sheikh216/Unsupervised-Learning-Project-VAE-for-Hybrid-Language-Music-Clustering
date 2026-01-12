@@ -17,7 +17,7 @@ python download_gtzan.py
 python download_lyrics.py
 
 # Optional: Download Spotify dataset
-python download_spotify.py
+python download_spotify.py ( tried but didn't able to work ) 
 
 # upload bangla.csv 
 ```
